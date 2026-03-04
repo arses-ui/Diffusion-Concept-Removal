@@ -11,6 +11,7 @@ from PIL import Image
 
 from .spectral import compute_discriminative_projector
 from .attention import get_cross_attention_layers, apply_weight_update, count_cross_attention_layers
+from .utils import aggregate_embeddings, EMBEDDING_MODES
 
 
 class CURE:
@@ -33,20 +34,35 @@ class CURE:
     def __init__(
         self,
         pipe: StableDiffusionPipeline,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        embedding_mode: str = "mean_masked",
     ):
         """
         Initialize CURE with a Stable Diffusion pipeline.
 
         Args:
             pipe: A StableDiffusionPipeline instance
-            device: Device to use ("cuda", "cpu", or None for auto-detect)
+            device: Device to use ("cuda", "cpu", "mps", or None for auto-detect)
+            embedding_mode: How to aggregate token embeddings before SVD.
+                "mean_masked" (default) — mean over non-padding tokens
+                "token_flat" — flatten all tokens (legacy, for ablation only)
+                "mean_all" — mean over all tokens including padding
+                "eos_only" — use only the end-of-sequence token
         """
         self.pipe = pipe
 
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
         self.device = torch.device(device)
+
+        if embedding_mode not in EMBEDDING_MODES:
+            raise ValueError(f"Unknown embedding_mode '{embedding_mode}'. Choose from {EMBEDDING_MODES}")
+        self.embedding_mode = embedding_mode
 
         # Move pipeline to device
         self.pipe = self.pipe.to(self.device)
@@ -56,47 +72,38 @@ class CURE:
 
     def get_text_embeddings(self, prompts: List[str]) -> torch.Tensor:
         """
-        Convert text prompts to CLIP token embeddings for subspace computation.
-
-        Each prompt produces 77 token embeddings via CLIP ViT-L/14. We preserve
-        all token embeddings (reshape, not aggregate) to match the cross-attention
-        input distribution and give SVD more data points.
+        Convert text prompts to CLIP embeddings for subspace computation.
 
         Args:
             prompts: List of text prompts (each describing a concept)
 
         Returns:
-            Embeddings tensor of shape [n_prompts * 77, hidden_dim]
+            Aggregated embeddings tensor. Shape depends on embedding_mode:
+                mean_masked/mean_all/eos_only: [n_prompts, hidden_dim]
+                token_flat: [n_prompts * seq_len, hidden_dim]
         """
         tokenizer = self.pipe.tokenizer
         text_encoder = self.pipe.text_encoder
 
-        # Tokenize
         tokens = tokenizer(
             prompts,
             padding="max_length",
             max_length=tokenizer.model_max_length,
             truncation=True,
-            return_tensors="pt"
+            return_tensors="pt",
         )
 
         input_ids = tokens.input_ids.to(self.device)
+        attention_mask = tokens.attention_mask.to(self.device)
 
-        # Get embeddings
         with torch.no_grad():
-            outputs = text_encoder(input_ids)
-            # Use the hidden states (before final layer norm for richer representation)
-            embeddings = outputs.last_hidden_state # [batch, seq_len, hidden_dim]
-            
+            embeddings = text_encoder(
+                input_ids, attention_mask=attention_mask
+            ).last_hidden_state  # [batch, seq_len, hidden_dim]
 
-        # Reshape to preserve all 77 token embeddings per prompt
-        # This respects CLIP ViT-L/14's training distribution and gives SVD
-        # more data points for robust subspace estimation. Padding tokens
-        # naturally get near-zero singular values and are deprioritized.
-        batch_size, seq_len, hidden_dim = embeddings.shape
-        embeddings = embeddings.reshape(batch_size * seq_len, hidden_dim).float()  # [batch*77, 768], float32 for SVD
-
-        return embeddings
+        return aggregate_embeddings(
+            embeddings.float(), attention_mask, mode=self.embedding_mode
+        )
 
     def compute_spectral_eraser(
         self,

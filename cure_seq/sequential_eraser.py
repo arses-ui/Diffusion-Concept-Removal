@@ -41,6 +41,7 @@ from cure.attention import (
     apply_weight_update,
     count_cross_attention_layers,
 )
+from cure.utils import aggregate_embeddings, EMBEDDING_MODES
 
 
 class SequentialCURE:
@@ -65,6 +66,7 @@ class SequentialCURE:
         device: Optional[str] = None,
         hidden_dim: int = 768,
         orth_threshold: float = 1e-3,
+        embedding_mode: str = "mean_masked",
     ):
         self.pipe = pipe
 
@@ -78,6 +80,10 @@ class SequentialCURE:
         self.device = torch.device(device)
         self.pipe = self.pipe.to(self.device)
 
+        if embedding_mode not in EMBEDDING_MODES:
+            raise ValueError(f"Unknown embedding_mode '{embedding_mode}'. Choose from {EMBEDDING_MODES}")
+        self.embedding_mode = embedding_mode
+
         # Core new component
         self.bank = SubspaceBank(hidden_dim=hidden_dim, orth_threshold=orth_threshold)
 
@@ -85,10 +91,10 @@ class SequentialCURE:
         self.erased_concepts: List[str] = []
         self._original_weights: Optional[list] = None
 
-    # ── Text embeddings (identical to CURE) ───────────────────────────────────
+    # ── Text embeddings ────────────────────────────────────────────────────────
 
     def get_text_embeddings(self, prompts: List[str]) -> torch.Tensor:
-        """CLIP token embeddings for subspace computation. Returns [n*77, 768]."""
+        """CLIP embeddings for subspace computation, aggregated by embedding_mode."""
         tokenizer = self.pipe.tokenizer
         text_encoder = self.pipe.text_encoder
 
@@ -100,12 +106,16 @@ class SequentialCURE:
             return_tensors="pt",
         )
         input_ids = tokens.input_ids.to(self.device)
+        attention_mask = tokens.attention_mask.to(self.device)
 
         with torch.no_grad():
-            embeddings = text_encoder(input_ids).last_hidden_state  # [b, 77, 768]
+            embeddings = text_encoder(
+                input_ids, attention_mask=attention_mask
+            ).last_hidden_state  # [b, 77, 768]
 
-        batch_size, seq_len, hidden_dim = embeddings.shape
-        return embeddings.reshape(batch_size * seq_len, hidden_dim).float()
+        return aggregate_embeddings(
+            embeddings.float(), attention_mask, mode=self.embedding_mode
+        )
 
     # ── Weight save/restore ───────────────────────────────────────────────────
 

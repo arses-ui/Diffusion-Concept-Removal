@@ -1,5 +1,7 @@
 # CURE-DiT
 
+> **Status: Implemented, pending validation.** Core code is written but has not been tested against a live SD3 model yet. Claims below describe the intended design, not measured results.
+
 **Training-free concept erasure for Stable Diffusion 3 and Flux.**
 
 Ports [CURE](https://arxiv.org/abs/2505.12677) (Concept Unlearning via Orthogonal Representation Editing) from SD v1.4's UNet to MM-DiT (Multi-Modal Diffusion Transformer) architectures. Same closed-form spectral projection, new architecture target.

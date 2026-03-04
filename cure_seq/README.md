@@ -2,7 +2,7 @@
 
 **Interference-free sequential concept unlearning for Stable Diffusion.**
 
-An extension of [CURE](https://arxiv.org/abs/2505.12677) that fixes the sequential erasure degradation problem (Figure 6 of the paper) through orthogonal projector composition. Erase hundreds of concepts one at a time with zero cross-term interference between erasures.
+An extension of [CURE](https://arxiv.org/abs/2505.12677) that fixes the sequential erasure degradation problem (Figure 6 of the paper) through orthogonal projector composition. Each concept's projector is orthogonalized against all prior erasures, eliminating cross-term interference. Measured capacity under current settings: ~20-40 concepts in CLIP's 768-dim space (dependent on embedding mode and lambda threshold).
 
 ---
 

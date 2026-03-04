@@ -29,6 +29,10 @@ import time
 from typing import List, Optional, Union
 from PIL import Image
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from .spectral import compute_discriminative_projector
 from .attention_sd3 import (
     get_joint_attention_layers,
@@ -37,6 +41,7 @@ from .attention_sd3 import (
     ensure_unfused,
     get_context_dim,
 )
+from cure.utils import aggregate_embeddings, EMBEDDING_MODES
 
 
 class SD3CURE:
@@ -52,6 +57,7 @@ class SD3CURE:
         self,
         pipe,
         device: Optional[str] = None,
+        embedding_mode: str = "mean_masked",
     ):
         self.pipe = pipe
 
@@ -64,6 +70,10 @@ class SD3CURE:
                 device = "cpu"
         self.device = torch.device(device)
         self.pipe = self.pipe.to(self.device)
+
+        if embedding_mode not in EMBEDDING_MODES:
+            raise ValueError(f"Unknown embedding_mode '{embedding_mode}'. Choose from {EMBEDDING_MODES}")
+        self.embedding_mode = embedding_mode
 
         # Ensure text-stream projections are not fused (need separate k/v)
         ensure_unfused(self.pipe.transformer)
@@ -80,16 +90,12 @@ class SD3CURE:
         """
         Extract text embeddings in the context space that feeds add_k_proj/add_v_proj.
 
-        SD3 pipeline: T5 encoder → [batch, seq_len, 4096] → context_embedder → [batch, seq_len, 1152]
-
-        We replicate this path to get the actual features that the attention
-        layers see, so our Pdis operates in the correct space.
+        SD3 pipeline: T5 → [batch, seq_len, 4096] → context_embedder → [batch, seq_len, 1152]
+        Then aggregated by embedding_mode.
 
         Returns:
-            [n_prompts * seq_len, context_dim] tensor (context_dim=1152 for SD3 medium)
+            Aggregated embeddings in context_dim space.
         """
-        # Use T5 (text_encoder_3) as the primary encoder for SD3
-        # T5 carries the bulk of the semantic information
         tokenizer = self.pipe.tokenizer_3
         text_encoder = self.pipe.text_encoder_3
 
@@ -108,17 +114,21 @@ class SD3CURE:
             return_tensors="pt",
         )
         input_ids = tokens.input_ids.to(self.device)
+        attention_mask = tokens.attention_mask.to(self.device)
 
         with torch.no_grad():
-            # T5 forward pass → [batch, seq_len, 4096]
-            t5_output = text_encoder(input_ids).last_hidden_state
+            # T5 forward pass with attention_mask → [batch, seq_len, 4096]
+            t5_output = text_encoder(
+                input_ids, attention_mask=attention_mask
+            ).last_hidden_state
 
             # Project through context_embedder → [batch, seq_len, context_dim]
             context_embedder = self.pipe.transformer.context_embedder
             projected = context_embedder(t5_output.to(context_embedder.weight.dtype))
 
-        batch_size, seq_len, context_dim = projected.shape
-        return projected.reshape(batch_size * seq_len, context_dim).float()
+        return aggregate_embeddings(
+            projected.float(), attention_mask, mode=self.embedding_mode
+        )
 
     # ── Weight save/restore ─────────────────────────────────────────────────
 

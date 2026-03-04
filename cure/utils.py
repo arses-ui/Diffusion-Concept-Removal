@@ -97,6 +97,56 @@ def create_image_grid(
     return grid
 
 
+EMBEDDING_MODES = ("mean_masked", "token_flat", "mean_all", "eos_only")
+
+
+def aggregate_embeddings(
+    embeddings: torch.Tensor,
+    attention_mask: torch.Tensor,
+    mode: str = "mean_masked",
+) -> torch.Tensor:
+    """
+    Aggregate token-level embeddings into concept-level representations.
+
+    Args:
+        embeddings: [batch, seq_len, hidden_dim] from text encoder
+        attention_mask: [batch, seq_len] — 1 for real tokens, 0 for padding
+        mode: Aggregation strategy
+            - "mean_masked": Mean over non-padding tokens (default, recommended)
+            - "token_flat": Flatten all tokens including padding (legacy, for ablation)
+            - "mean_all": Mean over all tokens including padding
+            - "eos_only": Use only the end-of-sequence token per prompt
+
+    Returns:
+        Aggregated embeddings:
+            mean_masked/mean_all/eos_only: [batch, hidden_dim]
+            token_flat: [batch * seq_len, hidden_dim]
+    """
+    if mode not in EMBEDDING_MODES:
+        raise ValueError(f"Unknown embedding_mode '{mode}'. Choose from {EMBEDDING_MODES}")
+
+    batch_size, seq_len, hidden_dim = embeddings.shape
+
+    if mode == "token_flat":
+        return embeddings.reshape(batch_size * seq_len, hidden_dim)
+
+    if mode == "mean_all":
+        return embeddings.mean(dim=1)  # [batch, hidden_dim]
+
+    if mode == "eos_only":
+        # EOS is the last real token per sequence (last 1 in attention_mask)
+        # For CLIP, EOS is at the position of the last non-pad token
+        lengths = attention_mask.sum(dim=1).long()  # [batch]
+        eos_indices = (lengths - 1).clamp(min=0)
+        return embeddings[torch.arange(batch_size, device=embeddings.device), eos_indices]
+
+    # mode == "mean_masked" (default)
+    mask = attention_mask.unsqueeze(-1).float()  # [batch, seq_len, 1]
+    masked_sum = (embeddings * mask).sum(dim=1)  # [batch, hidden_dim]
+    token_counts = mask.sum(dim=1).clamp(min=1)  # [batch, 1]
+    return masked_sum / token_counts  # [batch, hidden_dim]
+
+
 def get_default_forget_prompts(concept: str) -> List[str]:
     """
     Generate default forget prompts for common concepts.
