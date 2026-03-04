@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from cure_seq import SequentialCURE
 from cure_seq.experiments.metrics import print_budget_report
 from cure import CURE
-from cure.utils import set_seed, save_images, get_default_forget_prompts
+from cure.utils import set_seed, save_images, get_default_forget_prompts, EMBEDDING_MODES
 
 
 SEQUENTIAL_CONCEPTS = [
@@ -48,7 +48,7 @@ def erase_and_sample(eraser, concept, prompts, seed, output_dir, label, steps=20
     return path[0]
 
 
-def run_sequential_demo(concepts, alpha, seed, output_dir, device, n_steps):
+def run_sequential_demo(concepts, alpha, seed, output_dir, device, n_steps, embedding_mode):
     print("\n" + "=" * 70)
     print("CURE-Sequential Demo")
     print("=" * 70)
@@ -62,8 +62,9 @@ def run_sequential_demo(concepts, alpha, seed, output_dir, device, n_steps):
         cache_dir=str(Path(__file__).parent.parent / "cure" / "models"),
     )
 
-    eraser = SequentialCURE(pipe, device=device)
+    eraser = SequentialCURE(pipe, device=device, embedding_mode=embedding_mode)
     print(f"\nInitialized: {eraser}")
+    print(f"Embedding mode: {embedding_mode}")
 
     out = Path(output_dir)
     all_stats = []
@@ -133,6 +134,13 @@ def main():
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--steps", type=int, default=20,
                         help="Denoising steps for image generation (20 for speed)")
+    parser.add_argument(
+        "--embedding-mode",
+        type=str,
+        default="mean_masked",
+        choices=EMBEDDING_MODES,
+        help="Token embedding aggregation mode for SVD",
+    )
     args = parser.parse_args()
 
     if args.device is None:
@@ -158,6 +166,7 @@ def main():
         output_dir=args.output_dir,
         device=args.device,
         n_steps=args.steps,
+        embedding_mode=args.embedding_mode,
     )
 
 

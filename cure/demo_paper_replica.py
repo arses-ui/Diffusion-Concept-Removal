@@ -18,9 +18,9 @@ import argparse
 from pathlib import Path
 from diffusers import StableDiffusionPipeline
 from cure import CURE
-from cure.utils import set_seed, save_images, get_default_forget_prompts
+from cure.utils import set_seed, save_images, get_default_forget_prompts, EMBEDDING_MODES
 
-def run_experiment(concept, alpha=2.0, seed=42, cache_dir="./models"):
+def run_experiment(concept, alpha=2.0, seed=42, cache_dir="./models", embedding_mode="mean_masked"):
     """
     Run a single concept removal experiment matching paper methodology
     """
@@ -42,8 +42,9 @@ def run_experiment(concept, alpha=2.0, seed=42, cache_dir="./models"):
         cache_dir=cache_dir,
     )
 
-    cure = CURE(pipe, device=device)
-    print(f"Model loaded: {cure}\n")
+    cure = CURE(pipe, device=device, embedding_mode=embedding_mode)
+    print(f"Model loaded: {cure}")
+    print(f"Embedding mode: {embedding_mode}\n")
 
     # Get forget prompts (paper uses ~20 per concept)
     forget_prompts = get_default_forget_prompts(concept)
@@ -182,6 +183,13 @@ def main():
         default="./models",
         help="Directory to cache downloaded models (default: ./models)"
     )
+    parser.add_argument(
+        "--embedding-mode",
+        type=str,
+        default="mean_masked",
+        choices=EMBEDDING_MODES,
+        help="Token embedding aggregation mode for SVD",
+    )
     args = parser.parse_args()
 
     print("\n" + "=" * 80)
@@ -197,6 +205,7 @@ def main():
         alpha=args.alpha,
         seed=args.seed,
         cache_dir=args.cache_dir,
+        embedding_mode=args.embedding_mode,
     )
 
     print(f"\n{'='*80}")

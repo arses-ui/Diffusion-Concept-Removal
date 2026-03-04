@@ -13,7 +13,13 @@ from pathlib import Path
 
 from diffusers import StableDiffusionPipeline
 from cure import CURE
-from cure.utils import set_seed, save_images, create_image_grid, get_default_forget_prompts
+from cure.utils import (
+    set_seed,
+    save_images,
+    create_image_grid,
+    get_default_forget_prompts,
+    EMBEDDING_MODES,
+)
 
 
 def main():
@@ -27,6 +33,13 @@ def main():
                         help="Model ID")
     parser.add_argument("--cache-dir", type=str, default="./models",
                         help="Directory to cache downloaded models (default: ./models)")
+    parser.add_argument(
+        "--embedding-mode",
+        type=str,
+        default="mean_masked",
+        choices=EMBEDDING_MODES,
+        help="Token embedding aggregation mode for SVD",
+    )
     args = parser.parse_args()
 
     # Determine device
@@ -43,6 +56,7 @@ def main():
     print(f"Using device: {device}")
     print(f"Concept to erase: {args.concept}")
     print(f"Alpha parameter: {args.alpha}")
+    print(f"Embedding mode: {args.embedding_mode}")
     print()
 
     # Load Stable Diffusion pipeline
@@ -55,7 +69,7 @@ def main():
     )
 
     # Initialize CURE
-    cure = CURE(pipe, device=device)
+    cure = CURE(pipe, device=device, embedding_mode=args.embedding_mode)
     print(f"Initialized: {cure}")
     print()
 

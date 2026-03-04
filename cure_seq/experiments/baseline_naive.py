@@ -26,7 +26,7 @@ from diffusers import StableDiffusionPipeline
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from cure import CURE
-from cure.utils import set_seed, save_images, get_default_forget_prompts
+from cure.utils import set_seed, save_images, get_default_forget_prompts, EMBEDDING_MODES
 from cure_seq import SequentialCURE
 from cure_seq.experiments.metrics import print_budget_report
 
@@ -86,7 +86,7 @@ def measure_concept_presence(eraser, concept, n_images=10, seed=0, steps=20):
     return images
 
 
-def run_naive_baseline(concepts, alpha, seed, output_dir, device, steps, cache_dir):
+def run_naive_baseline(concepts, alpha, seed, output_dir, device, steps, cache_dir, embedding_mode):
     """
     Naive sequential CURE (no orthogonalization).
     Erase all concepts, then check whether concept[0] is still erased.
@@ -97,7 +97,7 @@ def run_naive_baseline(concepts, alpha, seed, output_dir, device, steps, cache_d
     print("=" * 70)
 
     pipe = load_pipeline(device, cache_dir)
-    eraser = CURE(pipe, device=device)
+    eraser = CURE(pipe, device=device, embedding_mode=embedding_mode)
 
     out = Path(output_dir) / "naive"
 
@@ -125,7 +125,7 @@ def run_naive_baseline(concepts, alpha, seed, output_dir, device, steps, cache_d
     return stats
 
 
-def run_sequential_orth(concepts, alpha, seed, output_dir, device, steps, cache_dir):
+def run_sequential_orth(concepts, alpha, seed, output_dir, device, steps, cache_dir, embedding_mode):
     """
     CURE-Sequential (with orthogonalization).
     Same concept order, same alpha — should maintain erasure quality throughout.
@@ -135,7 +135,7 @@ def run_sequential_orth(concepts, alpha, seed, output_dir, device, steps, cache_
     print("=" * 70)
 
     pipe = load_pipeline(device, cache_dir)
-    eraser = SequentialCURE(pipe, device=device)
+    eraser = SequentialCURE(pipe, device=device, embedding_mode=embedding_mode)
 
     out = Path(output_dir) / "sequential_orth"
     all_stats = []
@@ -171,6 +171,13 @@ def main():
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--cache-dir", type=str,
                         default=str(Path(__file__).parent.parent.parent / "cure" / "models"))
+    parser.add_argument(
+        "--embedding-mode",
+        type=str,
+        default="mean_masked",
+        choices=EMBEDDING_MODES,
+        help="Token embedding aggregation mode for SVD",
+    )
     parser.add_argument("--naive-only", action="store_true",
                         help="Run only the naive baseline (skip sequential)")
     parser.add_argument("--orth-only", action="store_true",
@@ -187,20 +194,21 @@ def main():
     print(f"Device:   {args.device}")
     print(f"Concepts: {concepts}")
     print(f"Alpha:    {args.alpha}")
+    print(f"Embedding mode: {args.embedding_mode}")
 
     results = {}
 
     if not args.orth_only:
         naive_stats = run_naive_baseline(
             concepts, args.alpha, args.seed,
-            args.output_dir, args.device, args.steps, args.cache_dir
+            args.output_dir, args.device, args.steps, args.cache_dir, args.embedding_mode
         )
         results["naive"] = naive_stats
 
     if not args.naive_only:
         orth_stats, bank = run_sequential_orth(
             concepts, args.alpha, args.seed,
-            args.output_dir, args.device, args.steps, args.cache_dir
+            args.output_dir, args.device, args.steps, args.cache_dir, args.embedding_mode
         )
         results["sequential_orth"] = orth_stats
 

@@ -39,3 +39,17 @@ See [`cure_dit/README.md`](cure_dit/README.md) for details.
 ## Paper Summary
 
 See [`CURE_PAPER_SUMMARY.md`](CURE_PAPER_SUMMARY.md) for a detailed breakdown of the original CURE paper including the algorithm, equations, experimental results, and limitations.
+
+---
+
+## Shared Evaluation Protocol
+
+For cross-branch re-baselining with a unified config and JSON result schema, use:
+
+```bash
+python evaluation/run_shared_eval.py --branch cure --concept-set objects10
+python evaluation/run_shared_eval.py --branch cure_seq --concept-set objects10 --erasure-mode sequential
+python evaluation/run_shared_eval.py --branch cure_dit --concept-set objects10
+```
+
+Details: [`evaluation/README.md`](evaluation/README.md)

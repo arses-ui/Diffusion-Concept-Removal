@@ -23,6 +23,7 @@ from diffusers import StableDiffusion3Pipeline
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from cure_dit import SD3CURE
+from cure.utils import EMBEDDING_MODES
 
 
 # Default forget prompts for common concepts
@@ -58,6 +59,13 @@ def main():
     parser.add_argument("--output-dir", type=str, default="outputs/demo_sd3")
     parser.add_argument("--dtype", type=str, default="float16",
                         choices=["float16", "bfloat16", "float32"])
+    parser.add_argument(
+        "--embedding-mode",
+        type=str,
+        default="mean_masked",
+        choices=EMBEDDING_MODES,
+        help="Token embedding aggregation mode for SVD",
+    )
     args = parser.parse_args()
 
     if args.device is None:
@@ -85,8 +93,13 @@ def main():
         torch_dtype=torch_dtype,
     )
 
-    eraser = SD3CURE(pipe, device=args.device)
+    eraser = SD3CURE(
+        pipe,
+        device=args.device,
+        embedding_mode=args.embedding_mode,
+    )
     print(f"Initialized: {eraser}")
+    print(f"Embedding mode: {args.embedding_mode}")
 
     # ── Generate BEFORE ─────────────────────────────────────────────────
     test_prompt = f"a photo of a {args.concept}"
