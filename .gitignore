@@ -42,3 +42,4 @@ models/
 *.csv
 wandb/
 runs/
+*.pdf
