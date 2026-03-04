@@ -19,9 +19,15 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from typing import Dict, List, Optional
 
 import torch
+
+# Ensure repo root is importable when script is run from any working directory.
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 @dataclass
